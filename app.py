@@ -23,9 +23,10 @@ def remove_background():
         return {'error': 'No file selected'}, 400
     
     try:
-        from rembg import remove
+        from rembg import remove, new_session
+        session = new_session("isnet-general-use")
         input_bytes = file.read()
-        output_bytes = remove(input_bytes)
+        output_bytes = remove(input_bytes, session=session)
         
         # Convert to white background JPEG
         img = Image.open(io.BytesIO(output_bytes)).convert("RGBA")
@@ -34,7 +35,7 @@ def remove_background():
         final = background.convert("RGB")
         
         output = io.BytesIO()
-        final.save(output, format='JPEG', quality=95)
+        final.save(output, format='JPEG', quality=100)
         output.seek(0)
         
         return Response(
