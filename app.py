@@ -67,10 +67,11 @@ def remove_background():
     # Query-Parameter auslesen
     model_name = request.args.get('model', DEFAULT_MODEL)
     use_post_process = request.args.get('post_process_mask', 'true').lower() == 'true'
-    use_alpha_matting = request.args.get('alpha_matting', 'false').lower() == 'true'
+    use_alpha_matting = request.args.get('alpha_matting', 'true').lower() == 'true'
     bgcolor_hex = request.args.get('bgcolor', 'FFFFFF')
     jpeg_quality = int(request.args.get('quality', '95'))
     output_format = request.args.get('format', 'jpeg').lower()
+    rotate_degrees = int(request.args.get('rotate', '0'))
 
     if model_name not in AVAILABLE_MODELS:
         return jsonify({
@@ -84,9 +85,20 @@ def remove_background():
         session = get_session(model_name)
         input_bytes = file.read()
 
+        # Bild oeffnen
+        img_input = Image.open(io.BytesIO(input_bytes))
+
+        # Bild drehen wenn rotate Parameter gesetzt (Moebel aufrecht stellen)
+        if rotate_degrees and rotate_degrees != 0:
+            # Pillow rotate() dreht gegen den Uhrzeigersinn, expand=True behaelt alles
+            img_input = img_input.rotate(-rotate_degrees, expand=True)
+            buf = io.BytesIO()
+            img_input.save(buf, format='PNG')
+            input_bytes = buf.getvalue()
+            print(f">>> Rotated image by {rotate_degrees} degrees", flush=True)
+
         # Grosse Bilder verkleinern um OOM bei Inferenz zu vermeiden
         # Railway hat begrenzt RAM - max 2048px Seitenlaenge
-        img_input = Image.open(io.BytesIO(input_bytes))
         max_dim = 2048
         if max(img_input.size) > max_dim:
             ratio = max_dim / max(img_input.size)
@@ -154,6 +166,7 @@ def remove_background():
                 'X-Model-Used': model_name,
                 'X-Post-Process': str(use_post_process),
                 'X-Alpha-Matting': str(use_alpha_matting),
+                'X-Rotation': str(rotate_degrees),
             }
         )
 
