@@ -8,6 +8,9 @@ import time
 
 app = Flask(__name__)
 
+# Max Upload: 25 MB - groessere Dateien werden mit 413 abgelehnt
+app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024
+
 AVAILABLE_MODELS = {
     "birefnet-general": "Bestes Allround-Modell (IoU 0.87, Dice 0.92)",
     "birefnet-general-lite": "Leichtgewicht-Version, schneller",
@@ -143,6 +146,8 @@ def remove_background():
 
     except Exception as e:
         print(f">>> Error ({model_name}): {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'error': str(e),
             'model': model_name,

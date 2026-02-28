@@ -32,6 +32,11 @@ print('>>> All models downloaded.'); \
 
 COPY app.py .
 
-EXPOSE 8080
+# PORT wird von Railway dynamisch gesetzt (Standard: 8080 als Fallback)
+ENV PORT=8080
+EXPOSE ${PORT}
 
-CMD ["python", "app.py"]
+# Gunicorn: 1 Worker (RAM-sparend), 4 Threads (concurrent requests),
+# 120s Timeout (grosse Bilder brauchen Zeit), Preload (Modell einmal laden)
+# Shell-Form damit $PORT zur Laufzeit aufgeloest wird
+CMD gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 --preload --access-logfile - --error-logfile -
