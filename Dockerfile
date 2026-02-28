@@ -12,13 +12,8 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Nur Default-Modell herunterladen (RAM-sparend, andere on-demand)
-RUN python -c "\
-from rembg import new_session; \
-print('>>> Downloading birefnet-general...'); \
-s1 = new_session('birefnet-general'); \
-print('>>> Model downloaded.'); \
-"
+# Modelle werden NICHT im Build heruntergeladen (spart Build-Zeit + RAM)
+# Download passiert lazy beim ersten Request zur Laufzeit
 
 COPY app.py .
 
