@@ -17,7 +17,7 @@ AVAILABLE_MODELS = {
     "isnet-general-use": "Schnell, gut fuer einfache Bilder (IoU 0.82)",
 }
 
-DEFAULT_MODEL = "birefnet-general"
+DEFAULT_MODEL = "isnet-general-use"
 
 # Global Session-Cache: Modelle einmal laden, fuer alle Requests wiederverwenden
 sessions = {}
@@ -83,6 +83,19 @@ def remove_background():
 
         session = get_session(model_name)
         input_bytes = file.read()
+
+        # Grosse Bilder verkleinern um OOM bei Inferenz zu vermeiden
+        # Railway hat begrenzt RAM - max 2048px Seitenlaenge
+        img_input = Image.open(io.BytesIO(input_bytes))
+        max_dim = 2048
+        if max(img_input.size) > max_dim:
+            ratio = max_dim / max(img_input.size)
+            new_size = (int(img_input.size[0] * ratio), int(img_input.size[1] * ratio))
+            img_input = img_input.resize(new_size, Image.LANCZOS)
+            buf = io.BytesIO()
+            img_input.save(buf, format='PNG')
+            input_bytes = buf.getvalue()
+            print(f">>> Resized image from {img_input.size} to {new_size}", flush=True)
 
         # bgcolor parsen (hex -> RGBA tuple)
         try:

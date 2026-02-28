@@ -21,5 +21,5 @@ COPY app.py .
 ENV PORT=8080
 EXPOSE ${PORT}
 
-# Gunicorn: 1 Worker, 2 Threads, 180s Timeout, kein --preload (lazy model load)
-CMD ["sh", "-c", "echo '>>> Starting gunicorn on port '$PORT && exec gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 180 --access-logfile - --error-logfile -"]
+# Gunicorn: 1 Worker, 1 Thread (spart RAM), 300s Timeout
+CMD ["sh", "-c", "echo '>>> Starting gunicorn on port '$PORT && exec gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 1 --timeout 300 --access-logfile - --error-logfile -"]
