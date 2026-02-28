@@ -12,22 +12,12 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download all 3 models during build (so they are cached in the image)
+# Nur Default-Modell herunterladen (RAM-sparend, andere on-demand)
 RUN python -c "\
 from rembg import new_session; \
-from PIL import Image; \
-import io; \
-img = Image.new('RGB', (10,10), 'white'); \
-buf = io.BytesIO(); \
-img.save(buf, format='PNG'); \
-test_bytes = buf.getvalue(); \
 print('>>> Downloading birefnet-general...'); \
 s1 = new_session('birefnet-general'); \
-print('>>> Downloading birefnet-general-lite...'); \
-s2 = new_session('birefnet-general-lite'); \
-print('>>> Downloading isnet-general-use...'); \
-s3 = new_session('isnet-general-use'); \
-print('>>> All models downloaded.'); \
+print('>>> Model downloaded.'); \
 "
 
 COPY app.py .
@@ -39,4 +29,5 @@ EXPOSE ${PORT}
 # Gunicorn: 1 Worker (RAM-sparend), 4 Threads (concurrent requests),
 # 120s Timeout (grosse Bilder brauchen Zeit), Preload (Modell einmal laden)
 # Shell-Form damit $PORT zur Laufzeit aufgeloest wird
-CMD gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 --preload --access-logfile - --error-logfile -
+# KEIN --preload: Modell wird lazy beim ersten Request geladen (spart RAM beim Boot)
+CMD gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 180 --access-logfile - --error-logfile -
