@@ -1,6 +1,8 @@
-from flask import Flask, request, Response, jsonify
-from PIL import Image
+from flask import Flask, request, Response, jsonify, send_file
+from PIL import Image, ImageOps
 from rembg import remove, new_session
+import cv2
+import numpy as np
 import io
 import os
 import sys
@@ -178,6 +180,117 @@ def remove_background():
             'error': str(e),
             'model': model_name,
         }), 500
+
+
+# ============================================================
+# /crop-book — Smart Crop fuer Buch-Fotos
+# Erkennt Buch per Kontur, schneidet zu, weisser Hintergrund
+# ============================================================
+
+def smart_crop_book(img_cv):
+    """Findet das Buch im Foto und schneidet es sauber heraus."""
+    height, width = img_cv.shape[:2]
+
+    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blurred, 30, 100)
+
+    kernel = np.ones((3, 3), np.uint8)
+    edges_dilated = cv2.dilate(edges, kernel, iterations=2)
+
+    contours, _ = cv2.findContours(
+        edges_dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+
+    if not contours:
+        return simple_center_crop(img_cv)
+
+    min_area = width * height * 0.15
+    valid_contours = [c for c in contours if cv2.contourArea(c) > min_area]
+
+    if not valid_contours:
+        return simple_center_crop(img_cv)
+
+    largest = max(valid_contours, key=cv2.contourArea)
+    x, y, w, h = cv2.boundingRect(largest)
+
+    padding_px = 10
+    x = max(0, x - padding_px)
+    y = max(0, y - padding_px)
+    w = min(width - x, w + padding_px * 2)
+    h = min(height - y, h + padding_px * 2)
+
+    cropped = img_cv[y:y+h, x:x+w]
+    img_pil = Image.fromarray(cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB))
+
+    img_pil = ImageOps.pad(
+        img_pil, (1200, 1600),
+        color=(255, 255, 255), centering=(0.5, 0.5)
+    )
+    return img_pil
+
+
+def simple_center_crop(img_cv):
+    """Fallback: Center-Crop auf 3:4 + weisser Hintergrund."""
+    height, width = img_cv.shape[:2]
+    target_ratio = 3 / 4
+    current_ratio = width / height
+
+    if current_ratio > target_ratio:
+        new_width = int(height * target_ratio)
+        start_x = (width - new_width) // 2
+        cropped = img_cv[:, start_x:start_x + new_width]
+    else:
+        new_height = int(width / target_ratio)
+        start_y = (height - new_height) // 2
+        cropped = img_cv[start_y:start_y + new_height, :]
+
+    img_pil = Image.fromarray(cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB))
+    img_pil = img_pil.resize((1200, 1600), Image.LANCZOS)
+    return img_pil
+
+
+@app.route('/crop-book', methods=['POST'])
+def crop_book():
+    """Smart Crop fuer Buch-Fotos: Buch erkennen, zuschneiden, weisser BG."""
+    image_bytes = None
+    try:
+        start = time.time()
+
+        if 'image' in request.files:
+            image_bytes = request.files['image'].read()
+        else:
+            image_bytes = request.data
+
+        if not image_bytes:
+            return jsonify({'error': 'no image data'}), 400
+
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img_cv = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        if img_cv is None:
+            return jsonify({'error': 'invalid image'}), 400
+
+        result_img = smart_crop_book(img_cv)
+
+        output = io.BytesIO()
+        result_img.save(output, format='JPEG', quality=92)
+        output.seek(0)
+
+        elapsed = time.time() - start
+        print(f">>> crop-book: {elapsed:.2f}s", flush=True)
+
+        return send_file(output, mimetype='image/jpeg',
+                         download_name='book_cropped.jpg')
+
+    except Exception as e:
+        print(f">>> crop-book error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        if image_bytes:
+            return send_file(io.BytesIO(image_bytes), mimetype='image/jpeg',
+                             download_name='book_original.jpg')
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
