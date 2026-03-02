@@ -74,6 +74,7 @@ def remove_background():
     jpeg_quality = int(request.args.get('quality', '95'))
     output_format = request.args.get('format', 'jpeg').lower()
     rotate_degrees = int(request.args.get('rotate', '0'))
+    max_size = int(request.args.get('max_size', '0'))  # 0 = kein Output-Resize
 
     if model_name not in AVAILABLE_MODELS:
         return jsonify({
@@ -137,6 +138,25 @@ def remove_background():
 
         # Ausgabe-Format bestimmen
         img = Image.open(io.BytesIO(output_bytes))
+
+        # Output-Resize wenn max_size gesetzt (laengste Seite)
+        if max_size > 0 and max(img.size) > max_size:
+            ratio = max_size / max(img.size)
+            new_w = int(img.size[0] * ratio)
+            new_h = int(img.size[1] * ratio)
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+            print(f">>> Output resized to {new_w}x{new_h} (max_size={max_size})", flush=True)
+
+        # sRGB Farbraum sicherstellen
+        try:
+            from PIL.ImageCms import profileToProfile, createProfile
+            srgb = createProfile('sRGB')
+            if img.info.get('icc_profile'):
+                from io import BytesIO as BIO
+                from PIL.ImageCms import ImageCmsProfile
+                img = profileToProfile(img, ImageCmsProfile(BIO(img.info['icc_profile'])), srgb)
+        except Exception:
+            pass  # Kein ICC Profil oder Fehler - ignorieren
 
         if output_format == 'png':
             output_buf = io.BytesIO()
@@ -290,6 +310,87 @@ def crop_book():
         if image_bytes:
             return send_file(io.BytesIO(image_bytes), mimetype='image/jpeg',
                              download_name='book_original.jpg')
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================
+# /resize — Resize ohne BG-Entfernung
+# Fuer Buecher, Glas, und andere skip-BG Items
+# ============================================================
+@app.route('/resize', methods=['POST'])
+def resize_image():
+    """Resize image to max_size on longest side + optional rotation."""
+    if 'image' not in request.files:
+        return jsonify({'error': 'No image file provided. Use field name: image'}), 400
+
+    file = request.files['image']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    max_size = int(request.args.get('max_size', '2400'))
+    jpeg_quality = int(request.args.get('quality', '85'))
+    output_format = request.args.get('format', 'jpeg').lower()
+    rotate_degrees = int(request.args.get('rotate', '0'))
+
+    try:
+        start = time.time()
+        input_bytes = file.read()
+        img = Image.open(io.BytesIO(input_bytes))
+
+        # Rotation
+        if rotate_degrees and rotate_degrees != 0:
+            img = img.rotate(-rotate_degrees, expand=True)
+
+        # Resize laengste Seite
+        if max_size > 0 and max(img.size) > max_size:
+            ratio = max_size / max(img.size)
+            new_w = int(img.size[0] * ratio)
+            new_h = int(img.size[1] * ratio)
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+
+        # sRGB
+        try:
+            from PIL.ImageCms import profileToProfile, createProfile
+            srgb = createProfile('sRGB')
+            if img.info.get('icc_profile'):
+                from io import BytesIO as BIO
+                from PIL.ImageCms import ImageCmsProfile
+                img = profileToProfile(img, ImageCmsProfile(BIO(img.info['icc_profile'])), srgb)
+        except Exception:
+            pass
+
+        output_buf = io.BytesIO()
+        if output_format == 'png':
+            img.save(output_buf, format='PNG')
+            mimetype = 'image/png'
+            ext = 'png'
+        else:
+            if img.mode == 'RGBA':
+                bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
+                bg.paste(img, mask=img.split()[3])
+                img = bg.convert("RGB")
+            elif img.mode != 'RGB':
+                img = img.convert("RGB")
+            img.save(output_buf, format='JPEG', quality=jpeg_quality)
+            mimetype = 'image/jpeg'
+            ext = 'jpg'
+
+        output_buf.seek(0)
+        elapsed = time.time() - start
+        print(f">>> resize: {img.size[0]}x{img.size[1]}, {elapsed:.2f}s", flush=True)
+
+        return Response(
+            output_buf.getvalue(),
+            mimetype=mimetype,
+            headers={
+                'Content-Disposition': f'attachment; filename=resized.{ext}',
+                'X-Processing-Time': f'{elapsed:.2f}s',
+                'X-Output-Size': f'{img.size[0]}x{img.size[1]}',
+            }
+        )
+
+    except Exception as e:
+        print(f">>> resize error: {e}", flush=True)
         return jsonify({'error': str(e)}), 500
 
 
