@@ -19,7 +19,7 @@ AVAILABLE_MODELS = {
     "isnet-general-use": "Schnell, gut fuer einfache Bilder (IoU 0.82)",
 }
 
-DEFAULT_MODEL = "isnet-general-use"
+DEFAULT_MODEL = "birefnet-general-lite"
 
 # Global Session-Cache: Modelle einmal laden, fuer alle Requests wiederverwenden
 sessions = {}
