@@ -125,8 +125,11 @@ def remove_background():
         remove_kwargs = {
             'session': session,
             'post_process_mask': use_post_process,
-            'bgcolor': bgcolor,
         }
+
+        # bgcolor nur bei JPEG setzen — bei PNG muss der HG transparent bleiben!
+        if output_format != 'png':
+            remove_kwargs['bgcolor'] = bgcolor
 
         if use_alpha_matting:
             remove_kwargs['alpha_matting'] = True
